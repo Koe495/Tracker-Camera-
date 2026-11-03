@@ -1,0 +1,7 @@
+.venv*/
+__pycache__/
+captures/
+measurements/
+.backups/
+lab_demo.png
+*.pyc
