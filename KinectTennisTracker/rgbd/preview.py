@@ -31,6 +31,10 @@ def _text(image, value, position, *, scale=.43, color=TEXT):
     cv2.putText(image, value, position, cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
 
 
+def target_name(label):
+    return {"tennis_ball": "Tennis ball", "uav": "UAV"}.get(label, label.replace("_", " "))
+
+
 def colorize_depth(depth):
     valid = (MIN_DEPTH_M <= depth) & (depth <= MAX_DEPTH_M)
     shade = np.zeros(depth.shape, dtype=np.uint8)
@@ -135,7 +139,7 @@ def _camera_views(frame, detections, measurements, predictions, rgb_view, depth_
         for view in (rgb_view, depth_view, forecast_view):
             cv2.rectangle(view, (x0, y0), (max(x0, x1 - 1), max(y0, y1 - 1)), color, 1, cv2.LINE_AA)
         for view, value in (
-            (rgb_view, f"Tennis {detection.confidence:.2f}"),
+            (rgb_view, f"{target_name(detection.label)} {detection.confidence:.2f}"),
             (depth_view, f"Z {xyz[2]:.2f} m" if xyz is not None else "No valid depth"),
         ):
             label_w = cv2.getTextSize(value, cv2.FONT_HERSHEY_SIMPLEX, .42, 1)[0][0] + 8
@@ -203,14 +207,14 @@ def _prediction_view(plot, tracks):
         _text(plot, f"#{track.id}", (point[0] + 8, point[1] - 8), color=color)
 
 
-def render_preview(frame, detections, measurements, tracks, fps, projection=None):
+def render_preview(frame, detections, measurements, tracks, fps, projection=None, target="tennis_ball"):
     canvas = np.full((WINDOW_H, WINDOW_W, 3), BACKGROUND, dtype=np.uint8)
-    _text(canvas, "Kinect Tennis Tracker", (GAP, 23), scale=.60)
+    _text(canvas, f"Kinect RGB-D Tracker / {target_name(target)}", (GAP, 23), scale=.60)
     _text(canvas, f"{fps:.1f} FPS  |  RGB-depth skew {abs(frame.rgb_ms - frame.depth_ms)} ms",
           (WINDOW_W - 282, 23), color=MUTED)
 
     views = []
-    for i, title in enumerate(("01  RGB / BALL DETECTION", "02  DEPTH / RGB ALIGNED",
+    for i, title in enumerate(("01  RGB / OBJECT DETECTION", "02  DEPTH / RGB ALIGNED",
                                "03  3D MOTION PREDICTION", "04  RGB / FORECAST BOXES")):
         left, top = panel_origin(i)
         row = PANEL_TOP + i // 2 * ROW_PITCH
@@ -234,7 +238,7 @@ def render_preview(frame, detections, measurements, tracks, fps, projection=None
     _text(canvas, "Dark: invalid", (bar_x + 133, bottom + 42), color=MUTED)
     _text(canvas, f"{MAX_DEPTH_M:.1f} m / far", (bar_x + 277, bottom + 42), color=MUTED)
     if not tracks:
-        _text(canvas, "Waiting for a ball with valid depth", (plot_left + GAP, plot_top + VIEW_H + 26), color=MUTED)
+        _text(canvas, "Waiting for an object with valid depth", (plot_left + GAP, plot_top + VIEW_H + 26), color=MUTED)
     for i, track in enumerate(tracks):
         xyz = "  ".join(f"{value:+.2f}" for value in track.xyz)
         state = ("coasting" if not track.observed else

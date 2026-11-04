@@ -1,10 +1,10 @@
-# Kinect Tennis Tracker
+# Kinect RGB-D Tracker
 
-Project Windows tại `E:\KinectTennisTracker`. Kinect for Windows v1 model 1517 thu RGB và depth. YOLOv8n nhận diện bóng tennis trong ảnh. Tracker Kalman dùng các điểm depth đã căn theo RGB để ước lượng XYZ, vận tốc, hướng và vị trí dự kiến từ 0,1 đến 0,5 giây.
+Project Windows tại `E:\KinectTennisTracker`. Kinect for Windows v1 model 1517 thu RGB và depth. Chọn YOLOv8n nhận diện bóng tennis hoặc YOLO11s nhận diện UAV. Cả hai chế độ dùng tracker Kalman và các điểm depth đã căn theo RGB để ước lượng XYZ, vận tốc, hướng và vị trí dự kiến từ 0,1 đến 0,5 giây.
 
 ## Chạy trực tiếp
 
-Kết nối Kinect với nguồn và USB. Mở `Start-Tennis.cmd` trong thư mục project. Nhấn **Q** hoặc **Esc** để dừng.
+Kết nối Kinect với nguồn và USB. Mở `Start-Tracker.cmd` trong thư mục project, nhấn **T** cho bóng tennis hoặc **U** cho UAV. Nhấn **Q** hoặc **Esc** để dừng phiên rồi chọn chế độ khác. `Start-Tennis.cmd` vẫn mở chế độ tennis mặc định.
 
 - **RGB** hiển thị ảnh màu và hộp nhận diện bóng. Hộp xanh có phép đo XYZ, hộp vàng chỉ có nhận diện 2D.
 - **Depth** hiển thị độ sâu đã căn theo RGB của cùng cặp khung. Màu chuyển từ gần 0,8 m đến xa 4,0 m, pixel tối biểu thị depth thiếu hoặc ngoài khoảng đo. Hộp quanh bóng ghi khoảng cách Z khi có phép đo hợp lệ.
@@ -16,7 +16,14 @@ Kết nối Kinect với nguồn và USB. Mở `Start-Tennis.cmd` trong thư m�
 
 ```powershell
 Set-Location E:\KinectTennisTracker
-.\Start-Tennis.cmd
+.\Start-Tracker.cmd
+```
+
+Có thể chọn model trực tiếp từ PowerShell. Mỗi phiên khởi tạo bộ theo dõi riêng cho loại vật thể đã chọn.
+
+```powershell
+.\.venv\Scripts\python.exe -B -m rgbd.live camera --detector uav
+.\.venv\Scripts\python.exe -B -m rgbd.live camera --detector tennis
 ```
 
 ## Ghi kết quả hoặc thử riêng model
@@ -29,7 +36,11 @@ Set-Location E:\KinectTennisTracker
 .\.venv\Scripts\python.exe -B -m rgbd.live camera --seconds 5 --headless
 
 # Chạy nhận diện 2D trên ảnh riêng.
-.\.venv\Scripts\python.exe -B -m rgbd.live image .\ball.jpg
+.\.venv\Scripts\python.exe -B -m rgbd.live image .\ball.jpg --detector tennis
+.\.venv\Scripts\python.exe -B -m rgbd.live image .\uav.jpg --detector uav
+
+# Phát lại bản ghi Kinect với model UAV.
+.\.venv\Scripts\python.exe -B -m rgbd replay .\recordings\uav.rgbd --detector uav --out .\runs\uav-replay
 ```
 
 `--confidence 0.15` cho phép xem thêm các ứng viên điểm thấp. Model chạy mặc định với đầu vào 640 pixel. Có thể thử `--imgsz 960` hoặc `--imgsz 1280` khi bóng nhỏ, đồng thời theo dõi tốc độ xử lý. `--motion cv` là mặc định cho chuyển động gần đều. `--motion ballistic` dùng cho bóng đã rời tay, với trọng lực theo trục `-Y` sau khi xác nhận camera đặt cân bằng. Hệ thống không mô hình hóa va chạm hoặc nảy. Tọa độ đo từ bề mặt bóng mà Kinect nhìn thấy. Vận tốc và dự đoán xuất hiện sau ít nhất ba phép đo ghép vào cùng track. Track ngoại suy tối đa 0,30 giây khi thiếu phép đo.
@@ -39,6 +50,15 @@ Khi xử lý chậm hơn luồng Kinect, ứng dụng ưu tiên cặp RGB-D mớ
 ## Nguồn model và cài đặt lại
 
 `models/tennis-ball.onnx` là YOLOv8n được chủ kho tinh chỉnh cho bóng tennis, dùng ONNX Runtime trên CPU. `setup.ps1` lấy trọng số từ revision `83ec86c` và kiểm tra SHA-256 `0020f0356923712947d223fcbbe053748ee862f5642c963041a6dc67ca8f910d`. Thẻ Hugging Face ghi Apache 2.0, còn metadata nhúng trong chính file ONNX ghi AGPL-3.0. Project dùng bản tải này để thử nghiệm cục bộ. [Thẻ model RJTPP](https://huggingface.co/RJTPP/tennis-ball-detection) · [Giấy phép được file ONNX dẫn chiếu](https://ultralytics.com/license)
+
+`models/uav.onnx` được xuất từ checkpoint YOLO11s một lớp `drone` trong `UAVDetection/best.pt`. Cả hai model chạy bằng ONNX Runtime trong môi trường Python của project. Khi thay checkpoint UAV, xuất lại ONNX từ môi trường có Ultralytics rồi dùng `--detector uav --weights <đường-dẫn.onnx>` để thử model mới. Định dạng đầu ra được hỗ trợ là mô hình YOLO detect một lớp xuất với `nms=False`. [Hướng dẫn xuất model Ultralytics](https://docs.ultralytics.com/modes/export)
+
+```powershell
+yolo export model=".\UAVDetection\best.pt" format=onnx imgsz=640 dynamic=True simplify=False opset=17 nms=False device=cpu
+.\.venv\Scripts\python.exe -B -m rgbd.live camera --detector uav --weights .\UAVDetection\best.onnx
+```
+
+Video trong `UAVDetection/Testing` dùng để kiểm tra nhận diện RGB. Để kiểm tra tọa độ và dự báo 3D của UAV, cần UAV hoặc vật thể mẫu thật trong vùng Kinect có depth hợp lệ. Hai chỉ số `frames_with_2d_target` và `frames_with_3d_target` trong báo cáo giúp tách hai phép thử.
 
 Máy đã cài Kinect SDK v1.8. Khi chuyển máy, cần Windows x64, Kinect SDK v1.8 và Python 3.14 x64. Chạy `.\setup.ps1` để tạo môi trường Python riêng, tải model và biên dịch cầu nối. Nếu SDK báo đã kết nối nhưng mở luồng bị `0x80004005`, chạy từ cửa sổ PowerShell thông thường hoặc mở `Start-Tennis.cmd` từ File Explorer. [Microsoft Kinect SDK v1.8](https://www.microsoft.com/en-us/download/details.aspx?id=40278)
 

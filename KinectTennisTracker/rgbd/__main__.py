@@ -106,7 +106,7 @@ def main():
     replay.add_argument("recording", type=Path)
     replay.add_argument("--out", type=Path, default=Path("replay-report"))
     replay.add_argument("--model", default="cv", help="cv, ballistic or module:factory")
-    replay.add_argument("--detector", default="ball", help="ball or module:factory")
+    replay.add_argument("--detector", default="ball", help="ball (HSV), tennis, uav or module:factory")
     replay.add_argument("--stride", type=int, choices=range(1, 5), default=2)
     replay.add_argument("--hue-min", type=float, default=8)
     replay.add_argument("--hue-max", type=float, default=42)
@@ -124,8 +124,14 @@ def main():
         else:
             if not all(0 <= hue <= 360 for hue in (args.hue_min, args.hue_max)):
                 raise ValueError("Hue must be between 0 and 360 degrees.")
-            detector = (BallDetector(args.hue_min, args.hue_max, stride=args.stride)
-                        if args.detector == "ball" else load_factory(args.detector)())
+            if args.detector == "ball":
+                detector = BallDetector(args.hue_min, args.hue_max, stride=args.stride)
+            elif args.detector in ("tennis", "uav"):
+                from .yolo import DETECTORS
+
+                detector = DETECTORS[args.detector]()
+            else:
+                detector = load_factory(args.detector)()
             model = (MODELS[args.model] if args.model in MODELS else load_factory(args.model))()
             pipeline = Pipeline(detector, Tracker(model))
             with args.recording.open("rb") as stream:

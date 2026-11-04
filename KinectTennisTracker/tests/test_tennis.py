@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 from rgbd.tennis import TennisDetector, center_mask
+from rgbd.yolo import DETECTORS, UAVDetector
 
 
 class TennisDetectorTests(unittest.TestCase):
@@ -17,17 +18,20 @@ class TennisDetectorTests(unittest.TestCase):
                     [320, 321, 80], [240, 241, 100], [32, 32, 16], [32, 32, 16], [.8, .7, .1],
                 ]], dtype=np.float32)]
 
-        detector = TennisDetector.__new__(TennisDetector)
-        detector.session = MockSession()
-        detector.input = type("Input", (), {"name": "images"})()
-        detector.width = detector.height = 640
-        detector.confidence = .25
         bgr = np.zeros((480, 640, 3), dtype=np.uint8)
         bgr[:, :, 2] = 255
-        detection, = detector.detect_image(bgr)
-        self.assertEqual(detection.bbox, (304, 144, 336, 176))
-        self.assertEqual(detection.label, "tennis_ball")
-        self.assertIn(160 * 640 + 320, detection.mask_pixels)
+        for mode, detector_class, label in (("tennis", TennisDetector, "tennis_ball"), ("uav", UAVDetector, "uav")):
+            with self.subTest(mode=mode):
+                self.assertIs(DETECTORS[mode], detector_class)
+                detector = detector_class.__new__(detector_class)
+                detector.session = MockSession()
+                detector.input = type("Input", (), {"name": "images"})()
+                detector.width = detector.height = 640
+                detector.confidence = .25
+                detection, = detector.detect_image(bgr)
+                self.assertEqual(detection.bbox, (304, 144, 336, 176))
+                self.assertEqual(detection.label, label)
+                self.assertIn(160 * 640 + 320, detection.mask_pixels)
 
     def test_depth_mask_stays_in_ball_center(self):
         points = center_mask((10, 20, 20, 30), 64)
