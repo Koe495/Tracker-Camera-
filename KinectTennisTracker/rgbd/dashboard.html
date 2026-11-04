@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RGB-D Motion Lab</title>
+<style>
+  :root { color-scheme: dark; font: 16px system-ui; color: #e9eff8; background: #101824 }
+  body { max-width: 1100px; margin: auto; padding: 26px 20px 46px }
+  h1 { margin: 8px 0; font-size: clamp(1.8rem, 5vw, 3rem) }
+  h2 { font-size: 1.15rem; margin: 0 0 10px }
+  p { color: #bdcbdb; line-height: 1.5 }
+  .eyebrow { letter-spacing: .12em; font-size: .75rem; color: #83e4d9; font-weight: 700 }
+  .panel { background: #152131; border: 1px solid #34445b; border-radius: 14px; margin-top: 17px; padding: 16px }
+  canvas { display: block; width: 100%; height: clamp(260px, 52vh, 495px); background: #0d1623; border-radius: 9px; touch-action: none }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 12px 0 }
+  input[type=range] { flex: 1; min-width: 100px; accent-color: #67dbcc }
+  button { font: inherit; border: 1px solid #70839c; border-radius: 6px; padding: 7px 11px; background: #213448; color: inherit; cursor: pointer }
+  button:focus-visible, input:focus-visible, canvas:focus-visible { outline: 2px solid #67dbcc }
+  .small { margin: 7px 0; font-size: .875rem }
+  .images { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)) }
+  figure { margin: 0; font-size: .86rem; color: #bdcbdb }
+  img { width: 100%; display: block; border-radius: 6px; margin-bottom: 5px }
+  .scroll { overflow: auto }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; white-space: nowrap }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #34445b }
+  th { color: #bdcbdb; font-weight: 600 }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; color: #d5e5f7 }
+</style>
+<main>
+  <div class="eyebrow" id="source"></div>
+  <h1 id="title"></h1>
+  <p>Tọa độ theo camera, tính bằng mét. Nét liền là lịch sử track. Nét đứt là dự đoán từ 0,1 đến 0,5 giây.</p>
+  <section class="panel">
+    <h2>Quỹ đạo 3D</h2>
+    <canvas id="plot" tabindex="0" aria-label="Quỹ đạo 3D. Dùng phím mũi tên để xoay."></canvas>
+    <div class="controls">
+      <button id="play">Phát</button>
+      <input id="seek" type="range" min="0" value="0" aria-label="Khung hình">
+      <output id="stamp"></output>
+      <button id="reset">Đặt lại góc nhìn</button>
+    </div>
+    <p class="small">Kéo chuột hoặc dùng phím mũi tên để xoay. Dấu chấm trắng là phép đo ở khung đang xem. Vòng tròn rỗng là track đang ngoại suy khi thiếu phép đo.</p>
+    <div class="scroll"><table>
+      <thead><tr><th scope="col">ID</th><th scope="col">Trạng thái</th><th scope="col">XYZ (m)</th><th scope="col">Vận tốc XYZ (m/s)</th><th scope="col">Vector hướng</th></tr></thead>
+      <tbody id="tracks"></tbody>
+    </table></div>
+  </section>
+  <section class="panel">
+    <h2>Ảnh kiểm tra luồng RGB-D</h2>
+    <div class="images">
+      <figure><img id="rgb" alt="Khung RGB cuối"><figcaption>RGB</figcaption></figure>
+      <figure><img id="raw" alt="Khung depth gốc cuối"><figcaption>Depth gốc</figcaption></figure>
+      <figure><img id="aligned" alt="Depth đã căn theo RGB ở khung cuối"><figcaption>Depth đã căn theo RGB</figcaption></figure>
+    </div>
+    <p class="small">Cả ba ảnh lấy từ cặp khung cuối. Pixel tối trong ảnh depth biểu thị dữ liệu thiếu. Màu depth là thang hiển thị cố định theo khoảng cách.</p>
+  </section>
+  <section class="panel"><details><summary>Chỉ số của phiên</summary><pre id="metrics"></pre></details></section>
+</main>
+<script id="payload" type="application/json">__DATA__</script>
+<script>
+  "use strict";
+  const data = JSON.parse(document.getElementById("payload").textContent);
+  const byId = (id) => document.getElementById(id);
+  const rows = data.rows;
+  const canvas = byId("plot");
+  const ctx = canvas.getContext("2d");
+  const seek = byId("seek");
+  const play = byId("play");
+  const colors = ["#67dbcc", "#ffb474", "#bfb0ff", "#f38bb2"];
+  byId("title").textContent = data.title;
+  byId("source").textContent = data.source;
+  byId("metrics").textContent = JSON.stringify(data.metrics, null, 2);
+  for (const [layer, uri] of Object.entries(data.images)) byId(layer).src = uri;
+  seek.max = rows.length - 1;
+  let index = Math.floor((rows.length - 1) * .65);
+  let yaw = -.52, pitch = .34, drag = null, startTime = null, offset = 0, animation = 0;
+  const minimum = [0, 0, 0], maximum = [0.4, 0.4, 0.4];
+  for (const row of rows) {
+    for (const point of [...row.measurements, ...row.tracks.flatMap(t => [t.xyz, ...t.forecasts])]) {
+      point.forEach((v, i) => { minimum[i] = Math.min(minimum[i], v); maximum[i] = Math.max(maximum[i], v); });
+    }
+  }
+  const center = minimum.map((v, i) => (v + maximum[i]) / 2);
+  const radius = Math.hypot(...minimum.map((v, i) => (maximum[i] - v) / 2));
+
+  function draw() {
+    const width = canvas.clientWidth, height = canvas.clientHeight;
+    const ratio = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+      canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
+    }
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    const scale = .43 * Math.min(width, height) / radius;
+    const project = (p) => {
+      const [x, y, z] = p.map((v, i) => v - center[i]);
+      const a = x * Math.cos(yaw) - z * Math.sin(yaw);
+      const b = x * Math.sin(yaw) + z * Math.cos(yaw);
+      return [width / 2 + scale * a, height / 2 - scale * (y * Math.cos(pitch) - b * Math.sin(pitch))];
+    };
+    function line(points, color, dashed = false, width = 2) {
+      if (points.length < 2) return;
+      ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dashed ? [5, 5] : []);
+      points.forEach((p, i) => i ? ctx.lineTo(...project(p)) : ctx.moveTo(...project(p)));
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    function dot(point, color, size, filled) {
+      ctx.beginPath(); ctx.arc(...project(point), size, 0, 2 * Math.PI);
+      ctx.fillStyle = ctx.strokeStyle = color; ctx.lineWidth = 2;
+      filled ? ctx.fill() : ctx.stroke();
+    }
+    ctx.font = "12px system-ui";
+    const origin = [0, 0, 0];
+    ["X phải", "Y lên", "Z xa"].forEach((label, axis) => {
+      const end = [0, 0, 0]; end[axis] = maximum[axis];
+      line([origin, end], "#697f9c", false, 1);
+      const [x, y] = project(end);
+      ctx.fillStyle = "#b9c8dc"; ctx.fillText(label, x + 5, y - 5);
+    });
+    const row = rows[index];
+    for (const measurement of row.measurements) dot(measurement, "#ffffff", 2, true);
+    for (const track of row.tracks) {
+      const color = colors[(track.id - 1) % colors.length];
+      const trail = [];
+      for (let i = index; i >= Math.max(0, index - 75); i--) {
+        const prior = rows[i].tracks.find(t => t.id === track.id);
+        if (!prior) break;
+        trail.push(prior.xyz);
+      }
+      line(trail, color);
+      line([track.xyz, ...track.forecasts], color, true);
+      dot(track.xyz, color, 5, track.observed);
+      if (track.forecasts.length) dot(track.forecasts.at(-1), color, 3, false);
+      const [x, y] = project(track.xyz);
+      ctx.fillStyle = color; ctx.fillText("#" + track.id, x + 9, y - 9);
+    }
+    seek.value = index;
+    byId("stamp").textContent = `${(row.ms / 1000).toFixed(2)} s · ${index + 1}/${rows.length}`;
+    const table = byId("tracks");
+    table.replaceChildren();
+    const coords = (p) => p ? p.map(v => v.toFixed(2)).join(" / ") : "—";
+    for (const track of row.tracks) {
+      const tr = table.insertRow();
+      [track.id, track.observed ? "Có phép đo" : "Ngoại suy", coords(track.xyz),
+        coords(track.velocity), coords(track.direction)].forEach(v => tr.insertCell().textContent = v);
+    }
+    if (!row.tracks.length) {
+      const cell = table.insertRow().insertCell();
+      cell.colSpan = 5; cell.textContent = "Chưa có track ở khung này.";
+    }
+  }
+  function stop() {
+    cancelAnimationFrame(animation);
+    startTime = null; play.textContent = "Phát";
+  }
+  function tick(now) {
+    if (startTime === null) return;
+    const target = now - startTime + offset;
+    while (index < rows.length - 1 && rows[index + 1].ms <= target) index++;
+    draw();
+    if (index === rows.length - 1) stop(); else animation = requestAnimationFrame(tick);
+  }
+  play.addEventListener("click", () => {
+    if (startTime !== null) return stop();
+    if (index === rows.length - 1) index = 0;
+    offset = rows[index].ms; startTime = performance.now();
+    play.textContent = "Tạm dừng"; animation = requestAnimationFrame(tick);
+  });
+  seek.addEventListener("input", () => { stop(); index = Number(seek.value); draw(); });
+  byId("reset").addEventListener("click", () => { yaw = -.52; pitch = .34; draw(); });
+  canvas.addEventListener("pointerdown", e => {
+    drag = [e.clientX, e.clientY]; canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (!drag) return;
+    yaw += (e.clientX - drag[0]) * .012; pitch += (e.clientY - drag[1]) * .012;
+    drag = [e.clientX, e.clientY]; draw();
+  });
+  canvas.addEventListener("lostpointercapture", () => { drag = null; });
+  canvas.addEventListener("keydown", e => {
+    const motion = {ArrowLeft: [-.1, 0], ArrowRight: [.1, 0], ArrowUp: [0, -.1], ArrowDown: [0, .1]}[e.key];
+    if (!motion) return;
+    e.preventDefault(); yaw += motion[0]; pitch += motion[1]; draw();
+  });
+  new ResizeObserver(draw).observe(canvas);
+  draw();
+</script>
+</html>
