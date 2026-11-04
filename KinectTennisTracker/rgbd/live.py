@@ -13,6 +13,8 @@ import numpy as np
 
 from .__main__ import BRIDGE, MODELS
 from .frames import MAX_DEPTH_M, MIN_DEPTH_M, read_frames
+from .preview import WINDOW_H, WINDOW_W, render_preview
+from .projection import read_projection
 from .report import save_report
 from .tennis import DEFAULT_MODEL, TennisDetector
 from .tracking import HORIZONS, Pipeline, Tracker
@@ -31,10 +33,11 @@ class LiveFrames:
         self.finished = False
         self.received = 0
         self.dropped = 0
+        self.projection = None
 
     def __enter__(self):
         self.process = subprocess.Popen(
-            [str(self.bridge.resolve()), "live"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            [str(self.bridge.resolve()), "live-project"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         self.reader = Thread(target=self._read, daemon=True)
@@ -43,6 +46,7 @@ class LiveFrames:
 
     def _read(self):
         try:
+            self.projection = read_projection(self.process.stdout)
             for frame in read_frames(self.process.stdout):
                 with self.condition:
                     self.received += 1
@@ -83,52 +87,8 @@ class LiveFrames:
             self.process.stdout.close()
 
 
-def preview_frame(frame, detections, measurements, tracks, fps):
-    image = np.frombuffer(frame.bgrx, dtype=np.uint8).reshape(frame.height, frame.width, 4)
-    canvas = np.zeros((max(frame.height, 480), frame.width + 310, 3), dtype=np.uint8)
-    canvas[:] = (29, 26, 24)
-    canvas[:frame.height, :frame.width] = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
-    valid = {m.detection.bbox for m in measurements}
-    for detection in detections:
-        x0, y0, x1, y1 = detection.bbox
-        color = (126, 234, 138) if detection.bbox in valid else (45, 187, 250)
-        cv2.rectangle(canvas, (x0, y0), (x1 - 1, y1 - 1), color, 2)
-        depth_status = "XYZ" if detection.bbox in valid else "no depth"
-        cv2.putText(canvas, f"Tennis {detection.confidence:.2f} | {depth_status}",
-                    (x0, max(y0 - 5, 16)), cv2.FONT_HERSHEY_SIMPLEX, .43, color, 1, cv2.LINE_AA)
-    left = frame.width
-
-    def label(text, y, color=(230, 230, 230)):
-        cv2.putText(canvas, text, (left + 12, y), cv2.FONT_HERSHEY_SIMPLEX, .44, color, 1, cv2.LINE_AA)
-
-    label(f"RGB-D  |  {fps:.1f} processed FPS", 25)
-    label("XZ view (m)  |  +Z away, +X right", 52)
-    label("Forecast dots: 0.1 to 0.5 s", 72)
-    x_mid, top, bottom = left + 150, 94, 292
-    cv2.rectangle(canvas, (left + 12, top), (left + 288, bottom), (100, 100, 100), 1)
-    cv2.line(canvas, (x_mid, top), (x_mid, bottom), (100, 100, 100), 1)
-
-    def xz(xyz):
-        x, _, z = xyz
-        return int(x_mid + 68 * x), int(bottom - (bottom - top) * z / 4)
-
-    palette = ((126, 234, 138), (45, 187, 250), (231, 166, 123))
-    if not tracks:
-        label("Waiting for valid ball depth", 324)
-    for i, track in enumerate(tracks):
-        color = palette[(track.id - 1) % len(palette)]
-        row = 320 + 45 * i
-        xyz = ", ".join(f"{v:.2f}" for v in track.xyz)
-        label(f"#{track.id}  {'measured' if track.observed else 'coasting'}  XYZ {xyz}", row, color)
-        if track.direction is not None:
-            label("Direction " + ", ".join(f"{v:+.2f}" for v in track.direction), row + 18, color)
-        for j, point in enumerate((track.xyz, *track.forecasts)):
-            u, v = xz(point)
-            if left + 12 <= u <= left + 288 and top <= v <= bottom:
-                cv2.circle(canvas, (u, v), 5 if j == 0 else 3, color,
-                           -1 if j == 0 and track.observed else 1, cv2.LINE_AA)
-    label("Q or Esc to quit", 470)
-    cv2.imshow(WINDOW, canvas)
+def preview_frame(frame, detections, measurements, tracks, fps, projection):
+    cv2.imshow(WINDOW, render_preview(frame, detections, measurements, tracks, fps, projection))
     key = cv2.waitKey(1) & 0xFF
     try:
         return key not in (ord("q"), 27) and cv2.getWindowProperty(WINDOW, cv2.WND_PROP_VISIBLE) >= 1
@@ -153,6 +113,9 @@ def run_live(args, detector):
                 frame = source.take()
                 if frames == 0:
                     first = monotonic()
+                    if not args.headless:
+                        cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+                        cv2.resizeWindow(WINDOW, round(WINDOW_W * 660 / WINDOW_H), 660)
                 start = perf_counter()
                 detections, measurements, tracks = pipeline.analyze(frame)
                 time_sum_ms += (perf_counter() - start) * 1000
@@ -170,7 +133,7 @@ def run_live(args, detector):
                 if args.out:
                     rows.append((frame.depth_ms, measurements, tracks))
                 if not args.headless and not preview_frame(frame, detections, measurements, tracks,
-                                                          frames / max(.001, elapsed)):
+                                                          frames / max(.001, elapsed), source.projection):
                     break
                 if args.seconds is not None and elapsed >= args.seconds:
                     break
@@ -190,6 +153,7 @@ def run_live(args, detector):
         "pipeline_mean_ms": time_sum_ms / frames,
         "rgb_depth_skew_median_ms": (skew_rank((frames - 1) // 2) + skew_rank(frames // 2)) / 2,
         "rgb_depth_skew_max_ms": max(skew), "aligned_depth_valid_fraction": coverage_sum / frames,
+        "projection_fit_p95_px": source.projection.calibration_p95_px if source.projection else None,
         "frames_with_2d_ball": rgb_hits, "frames_with_3d_ball": depth_hits,
         "frames_with_tracks": tracked_frames, "frames_with_forecasts": forecast_frames,
         "last_nonempty_tracks": latest_tracks,

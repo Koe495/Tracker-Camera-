@@ -80,6 +80,8 @@ class Track:
     axes: list[KalmanAxis]
     last_seen: float
     hits: int = 1
+    box: tuple[int, int, int, int] | None = None
+    box_xyz: Vec3 | None = None
 
     @property
     def position(self) -> Vec3:
@@ -95,6 +97,8 @@ class Estimate:
     direction: Vec3 | None
     observed: bool
     forecasts: tuple[Vec3, ...]
+    box: tuple[int, int, int, int] | None = None
+    box_xyz: Vec3 | None = None
 
 
 def measurement_variance(measurement: Measurement) -> float:
@@ -133,6 +137,7 @@ class Tracker:
                 axis.update(coordinate, measurement_variance(m))
             track.last_seen = time_s
             track.hits += 1
+            track.box, track.box_xyz = m.detection.bbox, m.xyz
         matched = {col for _, col in pairs}
         for col, m in enumerate(measurements):
             if col in matched or len(self.tracks) == self.max_tracks:
@@ -140,6 +145,7 @@ class Tracker:
             self.tracks.append(Track(
                 self.next_id, m.detection.label,
                 [KalmanAxis(value, pp=measurement_variance(m)) for value in m.xyz], time_s,
+                box=m.detection.bbox, box_xyz=m.xyz,
             ))
             self.next_id += 1
         return [self._estimate(track, time_s) for track in self.tracks]
@@ -166,7 +172,8 @@ class Tracker:
                       for p, v, a in zip(xyz, velocity, self.model.acceleration_m_s2))
                 for t in HORIZONS
             )
-        return Estimate(track.id, track.label, xyz, velocity, direction, track.last_seen == time_s, forecasts)
+        return Estimate(track.id, track.label, xyz, velocity, direction, track.last_seen == time_s,
+                        forecasts, track.box, track.box_xyz)
 
 
 class Pipeline:

@@ -29,12 +29,13 @@ class KinectBridge
                 return 2;
             }
             if (args.Length == 1 && args[0] == "probe") return 0;
-            bool live = args.Length == 1 && args[0] == "live";
+            bool project = args.Length == 1 && args[0] == "live-project";
+            bool live = project || (args.Length == 1 && args[0] == "live");
             int count = int.MaxValue;
             if (!live && (args.Length != 2 || args[0] != "stream" ||
                           !int.TryParse(args[1], out count) || count < 1))
-                throw new ArgumentException("Usage: KinectBridge.exe probe | live | stream <frame-count>");
-            Capture(connected, count, live);
+                throw new ArgumentException("Usage: KinectBridge.exe probe | live | live-project | stream <frame-count>");
+            Capture(connected, count, live, project);
             return 0;
         }
         catch (Exception error)
@@ -44,7 +45,7 @@ class KinectBridge
         }
     }
 
-    static unsafe void Capture(KinectSensor sensor, int count, bool live)
+    static unsafe void Capture(KinectSensor sensor, int count, bool live, bool project)
     {
         sensor.ColorStream.Enable(ColorFormat);
         sensor.DepthStream.Enable(DepthFormat);
@@ -91,7 +92,9 @@ class KinectBridge
                                 Math.Abs(c.Timestamp - d.Timestamp) > 25) return;
                             c.CopyPixelDataTo(color);
                             d.CopyDepthImagePixelDataTo(depth);
-                            sensor.CoordinateMapper.MapColorFrameToSkeletonFrame(ColorFormat, DepthFormat, depth, aligned);
+                            var mapper = sensor.CoordinateMapper;
+                            mapper.MapColorFrameToSkeletonFrame(ColorFormat, DepthFormat, depth, aligned);
+                            if (project && captured == 0) WriteProjectionSamples(output, mapper);
                             fixed (byte* depthBytes = depthMillimeters, xyzBytes = xyz)
                             {
                                 ushort* mm = (ushort*)depthBytes;
@@ -151,6 +154,26 @@ class KinectBridge
                 if (sensor.IsRunning) sensor.Stop();
                 if (stopReader != null && stop.WaitOne(0)) stopReader.Join();
             }
+        }
+    }
+
+    static void WriteProjectionSamples(BinaryWriter output, CoordinateMapper mapper)
+    {
+        float[] levels = { -0.35f, -0.175f, 0f, 0.175f, 0.35f };
+        float[] depths = { 0.9f, 1.4f, 2.1f, 3.0f, 3.8f };
+        output.Write(new byte[] { 80, 82, 74, 49 }); // PRJ1
+        output.Write(levels.Length * levels.Length * depths.Length);
+        foreach (float z in depths)
+        foreach (float y in levels)
+        foreach (float x in levels)
+        {
+            var p = new SkeletonPoint { X = -x * z, Y = y * z, Z = z };
+            var uv = mapper.MapSkeletonPointToColorPoint(p, ColorFormat);
+            output.Write(-p.X);
+            output.Write(p.Y);
+            output.Write(p.Z);
+            output.Write(uv.X);
+            output.Write(uv.Y);
         }
     }
 }

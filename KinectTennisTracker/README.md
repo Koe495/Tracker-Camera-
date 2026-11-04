@@ -6,8 +6,12 @@ Project Windows tại `E:\KinectTennisTracker`. Kinect for Windows v1 model 1517
 
 Kết nối Kinect với nguồn và USB. Mở `Start-Tennis.cmd` trong thư mục project. Nhấn **Q** hoặc **Esc** để dừng.
 
-- Khung xanh quanh bóng cho biết có phép đo XYZ. Khung vàng và chữ `no depth` cho biết model thấy bóng trong ảnh nhưng vùng bóng thiếu dữ liệu depth đáng tin.
-- Bên phải là hình chiếu XZ, tọa độ XYZ theo mét và vector hướng nếu vận tốc đủ lớn. Chấm lớn là vị trí hiện tại. Các chấm nhỏ là dự báo, cách nhau 0,1 giây. Vòng rỗng lớn đánh dấu track đang ngoại suy khi mất đo.
+- **RGB** hiển thị ảnh màu và hộp nhận diện bóng. Hộp xanh có phép đo XYZ, hộp vàng chỉ có nhận diện 2D.
+- **Depth** hiển thị độ sâu đã căn theo RGB của cùng cặp khung. Màu chuyển từ gần 0,8 m đến xa 4,0 m, pixel tối biểu thị depth thiếu hoặc ngoài khoảng đo. Hộp quanh bóng ghi khoảng cách Z khi có phép đo hợp lệ.
+- **3D Motion Prediction** hiển thị trục X sang phải, Y hướng lên và Z hướng ra xa cảm biến. Mũi tên biểu thị hướng dịch chuyển hiện tại. Chấm lớn là vị trí hiện tại và các chấm nhỏ là vị trí dự báo cách nhau 0,1 giây. Vòng rỗng lớn đánh dấu track đang ngoại suy khi mất đo.
+- **RGB / Forecast Boxes** dùng ảnh RGB hiện tại làm nền. Hộp nét liền là phát hiện hiện tại, còn hộp nét đứt là dự báo sau 0,1–0,5 giây. Chuyển động X/Y ở cùng độ sâu chủ yếu làm hộp dịch trong ảnh. Chuyển động Z làm hộp lớn khi đến gần và nhỏ khi đi xa. Hộp cũng có thể dịch tâm khi vật lệch trục quang học.
+- **Tín hiệu chiều sâu trong khung dự báo.** Hộp màu cam khi tiến gần, xanh lơ khi ra xa, xám khi độ thay đổi Z trong khoảng ±3 cm. Dòng `dZ (m) vs now` hiện giá trị có dấu ở cả năm mốc cho track ghi ID, kể cả khi hộp chồng nhau hoặc ra ngoài ảnh. `Box +0.5s: x…` là hệ số kích thước so với hộp nhận diện gần nhất. Khi có nhiều track, dòng số ưu tiên ID nhỏ nhất trong các track có phép đo hiện tại.
+- **Độ đậm của hộp dự báo.** Nét đứt rõ dần theo tốc độ trung bình dọc Z ở từng mốc, tính bằng `|ΔZ| / thời gian dự báo`. Độ đậm tăng tuyến tính từ 35% ở 0 m/s đến 95% ở 2 m/s và giữ mức tối đa trên ngưỡng này. Dấu của ΔZ vẫn quyết định màu.
 - Lần thử đầu nên dùng một bóng, giữ yên ở khoảng 1–1,5 m rồi dịch ngang từ từ. Để bóng tách rõ khỏi người cầm và khỏi tường phía sau. Cảnh rộng có thể có nhiều pixel depth trống mà vùng bóng vẫn đủ điểm.
 
 ```powershell
