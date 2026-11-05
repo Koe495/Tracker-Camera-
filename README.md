@@ -2,7 +2,7 @@
 
 > **🎥 Video Demo Hệ Thống:**
 > 
-> [![Xem video demo hệ thống Kinect StereoVisionProject](assets/demo_preview.png)](assets/demo_video.mp4)
+> [![Xem video demo hệ thống Kinect StereoVisionProject](assets/demo_preview.png)](assets/Desktop 2026.11.04 - 21.09.23.01.mp4)
 > 
 > *(Hoặc bạn có thể xem trực tiếp video nhúng bên dưới)*
 > 
