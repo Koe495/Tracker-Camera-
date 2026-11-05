@@ -2,16 +2,7 @@
 
 > **🎥 Video Demo Hệ Thống:**
 > 
-> [![Xem video demo hệ thống Kinect StereoVisionProject](assets/demo_preview.png)](assets/Desktop 2026.11.04 - 21.09.23.01.mp4)
-> 
-> *(Hoặc bạn có thể xem trực tiếp video nhúng bên dưới)*
-> 
-> <p align="center">
->   <video width="100%" controls>
->     <source src="assets/Desktop 2026.11.04 - 21.09.23.01.mp4" type="video/mp4">
->     Trình duyệt của bạn không hỗ trợ thẻ video.
->   </video>
-> </p>
+> [![Xem Video Demo trên Google Drive](https://img.shields.io/badge/Xem%20Video%20Demo-Google%20Drive-blue?style=for-the-badge&logo=googledrive)](https://drive.google.com/file/d/1wLcg4qgfJgf_NBBw5O9p2I2iK-IowtKg/view?usp=sharing)
 
 ---
 
