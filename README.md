@@ -1,11 +1,5 @@
 # Kinect StereoVisionProject — model 1517
 
-# Kinect StereoVisionProject — model 1517
-
-> **🎥 [Xem Video Demo Hệ Thống (VideoDemo.mp4)](assets/VideoDemo.mp4)**
-
----
-
 **Bản đo vùng/căn chỉnh/vật cản mới:** chạy `depth_lab.py` hoặc chọn **Kinect 1517 - Measurement Live** trong PyCharm. Xem [INTEGRATION.md](INTEGRATION.md) để đo bằng chuột, hiệu chuẩn sàn, xuất CSV và ghép detector/OCR. `main.py --lab` cũng mở bản mới; `main.py` không tham số giữ giao diện cũ.
 
 Ứng dụng Python hiển thị **hai video thời gian thực trong cùng một cửa sổ**:
