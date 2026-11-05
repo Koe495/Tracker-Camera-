@@ -8,7 +8,7 @@
 > 
 > <p align="center">
 >   <video width="100%" controls>
->     <source src="assets/demo_video.mp4" type="video/mp4">
+>     <source src="assets/Desktop 2026.11.04 - 21.09.23.01.mp4" type="video/mp4">
 >     Trình duyệt của bạn không hỗ trợ thẻ video.
 >   </video>
 > </p>
